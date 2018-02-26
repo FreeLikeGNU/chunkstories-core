@@ -14,6 +14,7 @@ uniform samplerCube environmentCubemap;
 
 //Passed variables
 in vec2 screenCoord;
+in vec3 eyeDirection;
 
 //Sky data
 uniform sampler2D sunSetRiseTexture;
@@ -70,6 +71,7 @@ vec4 computeLight(vec4 inputColor2, vec3 normal, vec4 worldSpacePosition, vec2 v
 	inputColor.rgb = pow(inputColor2.rgb, vec3(gamma));
 
 	float NdotL = clamp(dot(normalize(normal), normalize(normalMatrix * sunPos )), 0.0, 1.0);
+	float lDotU = dot(normalize(-sunPos), vec3(0.0, 1.0, 0.0));
 
 	float opacity = 0.0;
 
@@ -86,13 +88,15 @@ vec4 computeLight(vec4 inputColor2, vec3 normal, vec4 worldSpacePosition, vec2 v
 	float sunVisibility = clamp(1.0 - overcastFactor * 2.0, 0.0, 1.0);
 	float storminess = clamp(-1.0 + overcastFactor * 2.0, 0.0, 1.0);
 	
-	vec3 sunLight_g = mix(getSkyAbsorption(skyColor, zenithDensity(NdotL + multiScatterPhase)), vec3(0.0), overcastFactor);//pow(sunColor, vec3(gamma));
-	vec3 shadowLight_g = mix(skyColor, vec3(length(skyColor)), overcastFactor) / pi;//pow(shadowColor, vec3(gamma));
+	vec3 sunLight_g = sunLightColor * pi;//pow(sunColor, vec3(gamma));
+	vec3 shadowLight_g = getAtmosphericScatteringAmbient(sunPos, upVec) ;//pow(shadowColor, vec3(gamma));
 	shadowLight_g *= textureGammaIn(lightColors, vec2(dayTime, 1.0)).rgb;
 		
 	<ifdef shadows>
 	//Shadows sampling
-		vec4 coordinatesInShadowmap = accuratizeShadow(shadowMatrix * (untranslatedMVInv * worldSpacePosition));
+		vec4 shadowCoord = shadowMatrix * (untranslatedMVInv * worldSpacePosition);
+		float distFactor = getDistordFactor(shadowCoord.xy);
+		vec4 coordinatesInShadowmap = accuratizeShadow(shadowCoord);
 	
 		float clamped = 10 * clamp(NdotL, 0.0, 0.1);
 		
@@ -105,18 +109,15 @@ vec4 computeLight(vec4 inputColor2, vec3 normal, vec4 worldSpacePosition, vec2 v
 		//How much does the pixel is lit by directional light
 		float directionalLightning = clamp((NdotL * 1.1 - 0.1), 0.0, 1.0);
 		
-		if(!(coordinatesInShadowmap.x <= 0.0 || coordinatesInShadowmap.x >= 1.0 || coordinatesInShadowmap.y <= 0.0 || coordinatesInShadowmap.y >= 1.0  || coordinatesInShadowmap.z >= 1.0 || coordinatesInShadowmap.z <= -1.0))
-		{
 			//Bias to avoid shadow acne
-			float bias = clamp(0.0010*pow(1.0 * NdotL, 1.5) - 0.0*0.01075, 0.0010,0.0025 ) * clamp(16.0 * pow(length(coordinatesInShadowmap.xy - vec2(0.5)), 2.0), 1.0, 16.0);
+			float bias = distFactor/32768.0 * 64.0;
 			//Are we inside the shadowmap zone edge ?
 			edgeSmoother = 1.0-clamp(pow(max(0,abs(coordinatesInShadowmap.x-0.5) - 0.45)*20.0+max(0,abs(coordinatesInShadowmap.y-0.5) - 0.45)*20.0, 1.0), 0.0, 1.0);
 			
 			//
-			shadowIllumination += clamp((texture(shadowMap, vec3(coordinatesInShadowmap.xy, coordinatesInShadowmap.z-bias), 0.0) * 1.5 - 0.25), 0.0, 1.0);
-		}
+			shadowIllumination += clamp((texture(shadowMap, vec3(coordinatesInShadowmap.xy, coordinatesInShadowmap.z-bias), 0.0)), 0.0, 1.0);
 		
-		float sunlightAmount = ( directionalLightning * ( mix( shadowIllumination, voxelLight.y, 1-edgeSmoother) ) ) * shadowVisiblity;
+		float sunlightAmount = ( directionalLightning * shadowIllumination * ( mix( shadowIllumination, voxelLight.y, 1-edgeSmoother) )) * shadowVisiblity;
 		
 		finalLight += clamp(sunLight_g * sunlightAmount, 0.0, 4096);
 		finalLight += clamp(shadowLight_g * voxelSunlight, 0.0, 4096);
@@ -132,13 +133,9 @@ vec4 computeLight(vec4 inputColor2, vec3 normal, vec4 worldSpacePosition, vec2 v
 		flatShading += 0.25 * clamp(dot(/*vec3(0.0, 0.0, 1.0)*/sunPos, shadingDir), -0.5, 1.0);
 		flatShading += 0.5 * clamp(dot(/*vec3(0.0, 1.0, 0.0)*/sunPos, shadingDir), 0.0, 1.0);
 		
-		flatShading *= clamp(dot(sunPos, vec3(0.0, 1.0, 0.0)), 0.0, 1.0);
-		
 		finalLight += clamp(sunLight_g * flatShading * voxelSunlight, 0.0, 4096);
 		finalLight += clamp(shadowLight_g * voxelSunlight, 0.0, 4096);
 	<endif !shadows>
-		
-	finalLight *= (0.1 + 0.2 * sunVisibility + 0.8 * (1.0 - storminess));
 	
 	//Adds block light
 	finalLight += textureGammaIn(blockLightmap, vec2(voxelLight.x, 0.0)).rgb;

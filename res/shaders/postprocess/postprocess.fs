@@ -9,7 +9,7 @@ uniform sampler2D specularityBuffer;
 uniform usampler2D materialBuffer;
 uniform sampler2D debugBuffer;
 
-uniform sampler2D shadowMap;
+uniform sampler2DShadow shadowMap;
 
 uniform sampler2D bloomBuffer;
 uniform sampler2D reflectionsBuffer;
@@ -54,6 +54,7 @@ const float gammaInv = 0.45454545454;
 const vec4 waterColor = vec4(0.2, 0.4, 0.45, 1.0);
 
 <include ../lib/transformations.glsl>
+<include ../lib/shadowTricks.glsl>
 <include dither.glsl>
 <include ../lib/normalmapping.glsl>
 <include ../sky/sky.glsl>
@@ -62,9 +63,62 @@ vec4 getDebugShit(vec2 coords);
 
 out vec4 fragColor;
 
+uniform mat4 untranslatedMVInv;
+uniform mat4 shadowMatrix;
+
+uniform float shadowVisiblity;
+in vec3 eyeDirection;
+
+float bayer2(vec2 a){
+    a = floor(a);
+    return fract(dot(a,vec2(.5, a.y*.75)));
+}
+
+float bayer4(vec2 a)   {return bayer2( .5*a)   * .25     + bayer2(a); }
+float bayer8(vec2 a)   {return bayer4( .5*a)   * .25     + bayer2(a); }
+float bayer16(vec2 a)  {return bayer4( .25*a)  * .0625   + bayer4(a); }
+
+vec3 ComputeVolumetricLight(vec3 background, vec4 worldSpacePosition, vec3 lightVec, vec3 eyeDirection){
+	const int steps = 16;
+	const float oneOverSteps = 1.0 / float(steps);
+
+	vec3 startRay = mat3(shadowMatrix) * untranslatedMVInv[3].xyz;
+	vec3 endRay = (shadowMatrix * (untranslatedMVInv * worldSpacePosition)).rgb;
+
+	vec3 increment = (startRay - endRay) * oneOverSteps;
+	vec3 rayPosition = increment * bayer16(gl_FragCoord.xy) + endRay;
+
+	float weight = clamp(sqrt(dot(increment, increment)), 0.0, 0.05);
+
+	float ray = 0.0;
+
+	for (int i = 0; i < steps; i++){
+		vec3 shadowCoord = accuratizeShadow(vec4(rayPosition, 0.0)).rgb + vec3(0.0, 0.0, 0.0001);
+
+		ray += texture(shadowMap, shadowCoord, 0.0);
+
+		rayPosition += increment;
+	}
+	
+	float lDotU = dot(normalize(-lightVec), vec3(0.0, 1.0, 0.0));
+	float lDotV = dot(normalize(lightVec), normalize(eyeDirection));
+	
+	vec3 sunLight_g = sunLightColor;//pow(sunColor, vec3(gamma));
+	float sunlightAmount = ray * shadowVisiblity * oneOverSteps * weight * gPhase(lDotV, 0.9);
+
+	return sunlightAmount * sunLight_g * pi;
+}
+
 float poltergeist(vec2 coordinate, float seed)
 {
     return fract(sin(dot(coordinate*seed, vec2(12.9898, 78.233)))*43758.5453);
+}
+
+vec3 jodieReinhardTonemap(vec3 c){
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec3 tc = c / (c + 1.0);
+
+    return mix(c / (l + 1.0), tc, tc);
 }
 
 void main() {
@@ -88,6 +142,8 @@ void main() {
 	compositeColor.rgb = mix(compositeColor.rgb, reflection.rgb, reflectionsAmount);
 	//Dynamic reflections
 	
+	compositeColor.rgb += ComputeVolumetricLight(compositeColor.rgb, cameraSpacePosition, sunPos, eyeDirection);
+
 	//Applies bloom
 	<ifdef doBloom>
 	compositeColor.rgb += texture(bloomBuffer, finalCoords).rgb;
@@ -117,6 +173,8 @@ void main() {
 	
 	);
 	compositeColor.rgb *= mix(vec3(1.0), overlayColor, clamp(pauseOverlayFade, 0.0, 1.0));
+
+	compositeColor.rgb = pow(jodieReinhardTonemap(compositeColor.rgb * 5.0), vec3(gamma));
 	
 	//Ouputs
 	fragColor = compositeColor;
@@ -159,6 +217,7 @@ vec4 getDebugShit(vec2 coords)
 			shit = texture(debugBuffer, sampleCoords, 80.0);
 			shit = pow(texture(debugBuffer, sampleCoords, 0.0), vec4(gammaInv));
 			<endif dynamicGrass>
+			shit = vec4(texture(shadowMap, vec3(sampleCoords, 0.0)), 0.0, 0.0, 1.0);
 		}
 	}
 	shit.a = 1.0;
