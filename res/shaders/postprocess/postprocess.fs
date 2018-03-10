@@ -1,23 +1,23 @@
 #version 330
 uniform sampler2D shadedBuffer;
+uniform sampler2D zBuffer;
 
-uniform sampler2D albedoBuffer;
-uniform sampler2D depthBuffer;
+/*uniform sampler2D albedoBuffer;
 uniform sampler2D normalBuffer;
 uniform sampler2D voxelLightBuffer;
 uniform sampler2D specularityBuffer;
-uniform usampler2D materialBuffer;
-uniform sampler2D debugBuffer;
+//uniform usampler2D materialBuffer;
+uniform sampler2D debugBuffer;*/
 
 uniform sampler2DShadow shadowMap;
 
 uniform sampler2D bloomBuffer;
-uniform sampler2D reflectionsBuffer;
+//uniform sampler2D reflectionsBuffer;
 
 uniform sampler2D pauseOverlayTexture;
 uniform float pauseOverlayFade;
 
-uniform samplerCube environmentMap;
+//uniform samplerCube environmentMap;
 
 in vec2 texCoord;
 in vec2 pauseOverlayCoords;
@@ -33,11 +33,9 @@ uniform mat4 modelViewMatrixInv;
 
 uniform mat3 normalMatrix;
 uniform mat3 normalMatrixInv;
+uniform vec3 camPos;
 
 //Sky data
-uniform sampler2D sunSetRiseTexture;
-uniform sampler2D skyTextureSunny;
-uniform sampler2D skyTextureRaining;
 uniform vec3 sunPos;
 uniform float overcastFactor;
 uniform float dayTime;
@@ -57,6 +55,7 @@ const vec4 waterColor = vec4(0.2, 0.4, 0.45, 1.0);
 <include ../lib/shadowTricks.glsl>
 <include dither.glsl>
 <include ../lib/normalmapping.glsl>
+<include ../lib/noise.glsl>
 <include ../sky/sky.glsl>
 
 vec4 getDebugShit(vec2 coords);
@@ -104,7 +103,7 @@ vec3 ComputeVolumetricLight(vec3 background, vec4 worldSpacePosition, vec3 light
 	float lDotV = dot(normalize(lightVec), normalize(eyeDirection));
 	
 	vec3 sunLight_g = sunLightColor;//pow(sunColor, vec3(gamma));
-	float sunlightAmount = (ray * shadowVisiblity) * (oneOverSteps * weight) * (gPhase(lDotV, 0.9) * mCoeff);
+	float sunlightAmount = (ray * clamp(sunPos.y, 0.0, 1.0)) * (oneOverSteps * weight) * (gPhase(lDotV, 0.9) * mCoeff);
 
 	return sunlightAmount * sunLight_g * pi;
 }
@@ -121,9 +120,11 @@ vec3 jodieReinhardTonemap(vec3 c){
     return mix(c / (l + 1.0), tc, tc);
 }
 
+vec4 giMain();
+
 void main() {
 	vec2 finalCoords = texCoord;
-    vec4 cameraSpacePosition = convertScreenSpaceToCameraSpace(finalCoords, depthBuffer);
+    vec4 cameraSpacePosition = convertScreenSpaceToCameraSpace(finalCoords, zBuffer);
 	
 	// Water coordinates distorsion
 	finalCoords.x += underwater*sin(finalCoords.x * 50.0 + finalCoords.y * 60.0 + animationTimer * 1.0) / screenViewportSize.x * 5.0;
@@ -136,29 +137,38 @@ void main() {
 	compositeColor = mix(compositeColor, compositeColor * waterColor, underwater);
 	
 	//Applies reflections
-	float reflectionsAmount = texture(specularityBuffer, finalCoords).x;
+	/*float reflectionsAmount = texture(specularityBuffer, finalCoords).x;
 	
 	vec4 reflection = texture(reflectionsBuffer, finalCoords);
-	compositeColor.rgb = mix(compositeColor.rgb, reflection.rgb, reflectionsAmount);
+	compositeColor.rgb = mix(compositeColor.rgb, reflection.rgb, reflectionsAmount);*/
+	
 	//Dynamic reflections
 	
-	compositeColor.rgb += ComputeVolumetricLight(compositeColor.rgb, cameraSpacePosition, sunPos, eyeDirection);
+	//Volumetric light
+	compositeColor.rgb += clamp(ComputeVolumetricLight(compositeColor.rgb, cameraSpacePosition, sunPos, eyeDirection), 0.0, 1.0);
 
+	//GI
+	/*
+	vec4 gi = giMain();
+	compositeColor.rgb = mix(compositeColor.rgb, compositeColor.rgb * gi.rgb, gi.a);
+	compositeColor.rgb += gi.rgb * gi.a * 0.05;
+	*/
+	
 	//Applies bloom
 	<ifdef doBloom>
 	compositeColor.rgb += pow(texture(bloomBuffer, finalCoords).rgb, vec3(gamma)) * pi;
 	<endif doBloom>
 	
-	//Gamma-corrects stuff
-	compositeColor.rgb = pow(compositeColor.rgb, vec3(gammaInv));
-	
 	//Darkens further pixels underwater
-	compositeColor = mix(compositeColor, vec4(waterColor.rgb * getSkyColor(dayTime, vec3(0.0, -1.0, 0.0)), 1.0), underwater * clamp(length(cameraSpacePosition) / 32.0, 0.0, 1.0));
+	compositeColor = mix(compositeColor, vec4(waterColor.rgb * getSkyColor(dayTime, vec3(0.0, -1.0, 0.0)), 1.0), clamp(length(cameraSpacePosition) / 32.0, 0.0, 1.0) * underwater);
 	
 	// Eye adapatation
 	compositeColor *= apertureModifier;
 	
-	//Dither the final pixel colour
+	//Gamma-corrects stuff
+	compositeColor.rgb = pow(compositeColor.rgb, vec3(gammaInv));
+	
+	//Dither the final pixelcolour
 	vec3 its2 = compositeColor.rgb;
     vec3 rnd2 = screenSpaceDither( gl_FragCoord.xy );
     compositeColor.rgb = its2 + rnd2.xyz;
@@ -181,12 +191,12 @@ void main() {
 	
 	//Debug flag
 	<ifdef debugGBuffers>
-	fragColor = getDebugShit(texCoord);
+	//fragColor = getDebugShit(texCoord);
 	<endif debugGBuffers>
 }
 
 //Draws divided screen with debug buffers
-vec4 getDebugShit(vec2 coords)
+/*vec4 getDebugShit(vec2 coords)
 {
 	vec2 sampleCoords = coords;
 	sampleCoords.x = mod(sampleCoords.x, 0.5);
@@ -222,4 +232,4 @@ vec4 getDebugShit(vec2 coords)
 	}
 	shit.a = 1.0;
 	return shit;
-}
+}*/
