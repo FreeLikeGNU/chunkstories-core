@@ -1,19 +1,16 @@
 package io.xol.chunkstories.core.rendering.passes;
 
-import java.util.Map;
-
 import org.joml.Matrix4f;
 
 import io.xol.chunkstories.api.rendering.GameWindow;
-import io.xol.chunkstories.api.rendering.RenderPass;
 import io.xol.chunkstories.api.rendering.RenderingInterface;
-import io.xol.chunkstories.api.rendering.RenderingPipeline;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.BlendMode;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.CullingMode;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.DepthTestMode;
-import io.xol.chunkstories.api.rendering.pipeline.ShaderInterface;
-import io.xol.chunkstories.api.rendering.target.RenderTargetAttachementsConfiguration;
-import io.xol.chunkstories.api.rendering.textures.Texture;
+import io.xol.chunkstories.api.rendering.StateMachine.BlendMode;
+import io.xol.chunkstories.api.rendering.StateMachine.CullingMode;
+import io.xol.chunkstories.api.rendering.StateMachine.DepthTestMode;
+import io.xol.chunkstories.api.rendering.pass.RenderPass;
+import io.xol.chunkstories.api.rendering.pass.RenderPasses;
+import io.xol.chunkstories.api.rendering.shader.Shader;
+import io.xol.chunkstories.api.rendering.target.RenderTargetsConfiguration;
 import io.xol.chunkstories.api.rendering.textures.Texture2D;
 import io.xol.chunkstories.api.rendering.textures.Texture2DRenderTarget;
 import io.xol.chunkstories.api.rendering.textures.TextureFormat;
@@ -25,12 +22,12 @@ public class GBuffersOpaquePass extends RenderPass {
 	final WorldRenderer worldRenderer;
 	final World world;
 	
-	public final Texture2DRenderTarget albedoBuffer, normalBuffer, voxelLightBuffer, speculairtyBuffer, materialsBuffer;
+	public final Texture2DRenderTarget albedoBuffer, normalBuffer, voxelLightBuffer, specularityBuffer, materialsBuffer;
 	
-	private RenderTargetAttachementsConfiguration fbo;
+	private RenderTargetsConfiguration fbo;
 	private Texture2DRenderTarget rbZBuffer;
 
-	public GBuffersOpaquePass(RenderingPipeline pipeline, String name, String[] requires, String[] exports) {
+	public GBuffersOpaquePass(RenderPasses pipeline, String name, String[] requires, String[] exports) {
 		super(pipeline, name, requires, exports);
 		this.worldRenderer = pipeline.getWorldRenderer();
 		this.world = worldRenderer.getWorld();
@@ -39,27 +36,25 @@ public class GBuffersOpaquePass extends RenderPass {
 		albedoBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RGBA_8BPP, gameWindow.getWidth(), gameWindow.getHeight());
 		normalBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RGB_8, gameWindow.getWidth(), gameWindow.getHeight());
 		voxelLightBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RG_8, gameWindow.getWidth(), gameWindow.getHeight());
-		speculairtyBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RED_8, gameWindow.getWidth(), gameWindow.getHeight());
+		specularityBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RED_8, gameWindow.getWidth(), gameWindow.getHeight());
 		materialsBuffer = pipeline.getRenderingInterface().newTexture2D(TextureFormat.RED_8UI, gameWindow.getWidth(), gameWindow.getHeight());
 		
-		this.resolvedOutputs.put("albedo", albedoBuffer);
-		this.resolvedOutputs.put("normals", normalBuffer);
-		this.resolvedOutputs.put("voxelLight", voxelLightBuffer);
-		this.resolvedOutputs.put("specularity", speculairtyBuffer);
-		this.resolvedOutputs.put("material", materialsBuffer);
+		this.resolvedOutputs.put("albedoBuffer", albedoBuffer);
+		this.resolvedOutputs.put("normalBuffer", normalBuffer);
+		this.resolvedOutputs.put("voxelLightBuffer", voxelLightBuffer);
+		this.resolvedOutputs.put("specularityBuffer", specularityBuffer);
+		this.resolvedOutputs.put("materialsBuffer", materialsBuffer);
 	}
 
 	@Override
-	public void resolvedInputs(Map<String, Texture> inputs) {
-		rbZBuffer = (Texture2DRenderTarget) inputs.get("zBuffer");
-		
-		fbo = pipeline.getRenderingInterface().getRenderTargetManager().newConfiguration(rbZBuffer, albedoBuffer, normalBuffer, voxelLightBuffer, speculairtyBuffer, materialsBuffer);
+	public void onResolvedInputs() {
+		rbZBuffer = (Texture2DRenderTarget) resolvedInputs.get("zBuffer");
+		fbo = pipeline.getRenderingInterface().getRenderTargetManager().newConfiguration(rbZBuffer, albedoBuffer, normalBuffer, voxelLightBuffer, specularityBuffer, materialsBuffer);
 	}
 
 	@Override
 	public void render(RenderingInterface renderingInterface) {
 		if(fbo != null) {
-			//System.out.println("bah go");
 			GameWindow gameWindow = pipeline.getRenderingInterface().getWindow();
 			
 			renderingInterface.getRenderTargetManager().setConfiguration(fbo);
@@ -70,15 +65,11 @@ public class GBuffersOpaquePass extends RenderPass {
 			renderingInterface.setBlendMode(BlendMode.DISABLED);
 			renderingInterface.setCullingMode(CullingMode.COUNTERCLOCKWISE);
 			
-			ShaderInterface opaqueBlocksShader = renderingInterface.useShader("blocks_opaque");
+			Shader opaqueBlocksShader = renderingInterface.useShader("blocks_opaque");
 			
-			Texture2D blocksAlbedoTexture;
-			Texture2D blocksNormalTexture;
-			Texture2D blocksMaterialTexture;
-			
-			blocksAlbedoTexture = gameWindow.getClient().getContent().voxels().textures().getDiffuseAtlasTexture();
-			blocksNormalTexture = gameWindow.getClient().getContent().voxels().textures().getNormalAtlasTexture();
-			blocksMaterialTexture = gameWindow.getClient().getContent().voxels().textures().getMaterialAtlasTexture();
+			Texture2D blocksAlbedoTexture = gameWindow.getClient().getContent().voxels().textures().getDiffuseAtlasTexture();
+			Texture2D blocksNormalTexture = gameWindow.getClient().getContent().voxels().textures().getNormalAtlasTexture();
+			Texture2D blocksMaterialTexture = gameWindow.getClient().getContent().voxels().textures().getMaterialAtlasTexture();
 			
 			renderingInterface.bindAlbedoTexture(blocksAlbedoTexture);
 			renderingInterface.bindNormalTexture(blocksNormalTexture);
@@ -118,7 +109,7 @@ public class GBuffersOpaquePass extends RenderPass {
 			worldRenderer.getChunksRenderer().renderChunks(renderingInterface);
 			
 			// Select shader
-			ShaderInterface entitiesShader = renderingInterface.useShader("entities");
+			Shader entitiesShader = renderingInterface.useShader("entities");
 
 			entitiesShader.setUniform1f("viewDistance", renderingInterface.getClient().renderingConfig().getViewDistance());
 			//entitiesShader.setUniform1f("shadowVisiblity", shadower.getShadowVisibility());
@@ -144,6 +135,6 @@ public class GBuffersOpaquePass extends RenderPass {
 
 	@Override
 	public void onScreenResize(int width, int height) {
-		fbo.resizeFBO(width, height);
+		fbo.resize(width, height);
 	}
 }

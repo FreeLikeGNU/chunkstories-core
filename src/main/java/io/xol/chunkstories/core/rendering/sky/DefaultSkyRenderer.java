@@ -14,10 +14,10 @@ import org.joml.Vector3f;
 import io.xol.chunkstories.api.math.Math2;
 import io.xol.chunkstories.api.rendering.Primitive;
 import io.xol.chunkstories.api.rendering.RenderingInterface;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.BlendMode;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.CullingMode;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.DepthTestMode;
-import io.xol.chunkstories.api.rendering.pipeline.ShaderInterface;
+import io.xol.chunkstories.api.rendering.StateMachine.BlendMode;
+import io.xol.chunkstories.api.rendering.StateMachine.CullingMode;
+import io.xol.chunkstories.api.rendering.StateMachine.DepthTestMode;
+import io.xol.chunkstories.api.rendering.shader.Shader;
 import io.xol.chunkstories.api.rendering.vertex.VertexBuffer;
 import io.xol.chunkstories.api.rendering.vertex.VertexFormat;
 import io.xol.chunkstories.api.rendering.world.SkyRenderer;
@@ -33,21 +33,19 @@ public class DefaultSkyRenderer implements SkyRenderer
 	CloudsRenderer cloudsRenderer;
 	VertexBuffer starsVertexBuffer;
 	
-	public DefaultSkyRenderer(WorldRenderer worldRenderer)
-	{
+	public DefaultSkyRenderer(WorldRenderer worldRenderer) {
 		this.worldRenderer = worldRenderer;
 		this.world = worldRenderer.getWorld();
 		this.cloudsRenderer = new CloudsRenderer(worldRenderer, this);
 	}
 
-	public Vector3f getSunPosition()
-	{
+	public Vector3f getSunPosition() {
 		float sunAzimuth = (float) ((dayTime + 0.75) * 360.0f * (Math.PI / 180.0));
-		float sunElevation = (float) (0 * (Math.PI / 180.0));
-		
-		Vector3f lookAt = new Vector3f((float) (Math.sin(sunElevation) * Math.cos(sunAzimuth)), (float)( Math.sin(sunAzimuth)), (float)(Math.cos(sunElevation) * Math.cos(sunAzimuth)));
+		float sunElevation = (float) (0 + 90 * (Math.PI / 180.0));
+
+		Vector3f lookAt = new Vector3f(0.5f + (float) (Math.sin(sunElevation) * Math.cos(sunAzimuth)), (float) (Math.sin(sunAzimuth)),
+				0.3f + (float) (Math.cos(sunElevation) * Math.cos(sunAzimuth)));
 		return lookAt.normalize();
-		//return new Vector3f((float) (sundistance * Math.sin(rad(sunangle)) * Math.cos(sunloc)), (float) (height + sundistance * Math.sin(sunloc)), (float) (sundistance * Math.cos(rad(sunangle)) * Math.cos(sunloc))).normalize();
 	}
 	
 	public void render(RenderingInterface renderingContext)
@@ -67,30 +65,8 @@ public class DefaultSkyRenderer implements SkyRenderer
 
 		Vector3f sunPosVector = getSunPosition();
 
-		ShaderInterface skyShader = renderingContext.useShader("sky");
+		Shader skyShader = renderingContext.useShader("sky");
 		
-		/*renderingContext.bindTexture2D("cloudsNoise", TexturesHandler.getTexture("./textures/environement/cloudsStatic.png"));
-		
-		Texture2D glowTexture = TexturesHandler.getTexture("./textures/environement/glow.png");
-		renderingContext.bindTexture2D("sunSetRiseTexture", glowTexture);
-		
-		glowTexture.setLinearFiltering(true);
-		glowTexture.setTextureWrapping(false);
-		glowTexture.setTextureWrapping(false);
-
-		Texture2D skyTextureSunny = TexturesHandler.getTexture("./textures/environement/sky.png");
-		Texture2D skyTextureRaining = TexturesHandler.getTexture("./textures/environement/sky_rain.png");
-		
-		renderingContext.bindTexture2D("skyTextureSunny", skyTextureSunny);
-		renderingContext.bindTexture2D("skyTextureRaining", skyTextureRaining);
-		
-		skyTextureSunny.setLinearFiltering(true);
-		skyTextureSunny.setMipMapping(false);
-		skyTextureSunny.setTextureWrapping(false);
-		
-		skyTextureRaining.setLinearFiltering(true);
-		skyTextureRaining.setMipMapping(false);
-		skyTextureRaining.setTextureWrapping(false);*/
 		skyShader.setUniform1f("overcastFactor", world.getWeather());
 
 		skyShader.setUniform3f("sunPos", sunPosVector.x(), sunPosVector.y(), sunPosVector.z());
@@ -101,7 +77,7 @@ public class DefaultSkyRenderer implements SkyRenderer
 
 		renderingContext.setBlendMode(BlendMode.MIX);
 		
-		ShaderInterface starsShader = renderingContext.useShader("stars");
+		Shader starsShader = renderingContext.useShader("stars");
 		
 		starsShader.setUniform3f("sunPos", sunPosVector.x(), sunPosVector.y(), sunPosVector.z());
 		starsShader.setUniform3f("color", 1f, 1f, 1f);
@@ -136,7 +112,6 @@ public class DefaultSkyRenderer implements SkyRenderer
 		renderingContext.draw(Primitive.POINT, 0, NB_STARS);
 		
 		renderingContext.getRenderTargetManager().setDepthMask(true);
-		renderingContext.flush();
 		
 		renderingContext.setBlendMode(BlendMode.DISABLED);
 		renderingContext.setDepthTestMode(DepthTestMode.LESS_OR_EQUAL);
@@ -144,7 +119,7 @@ public class DefaultSkyRenderer implements SkyRenderer
 		cloudsRenderer.renderClouds(renderingContext);
 	}
 
-	public void setupShader(ShaderInterface shaderInterface)
+	public void setupShader(Shader shaderInterface)
 	{
 		float fogFactor = Math.min(Math.max(0.0f, world.getWeather() - 0.4f) / 0.1f, 1.0f);
 		

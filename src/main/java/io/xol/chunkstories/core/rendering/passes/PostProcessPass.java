@@ -1,17 +1,14 @@
 package io.xol.chunkstories.core.rendering.passes;
 
-import java.util.Map;
-
 import io.xol.chunkstories.api.gui.Layer;
 import io.xol.chunkstories.api.rendering.GameWindow;
-import io.xol.chunkstories.api.rendering.RenderPass;
 import io.xol.chunkstories.api.rendering.RenderingInterface;
-import io.xol.chunkstories.api.rendering.RenderingPipeline;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.BlendMode;
-import io.xol.chunkstories.api.rendering.pipeline.PipelineConfiguration.DepthTestMode;
-import io.xol.chunkstories.api.rendering.pipeline.ShaderInterface;
-import io.xol.chunkstories.api.rendering.target.RenderTargetAttachementsConfiguration;
-import io.xol.chunkstories.api.rendering.textures.Texture;
+import io.xol.chunkstories.api.rendering.StateMachine.BlendMode;
+import io.xol.chunkstories.api.rendering.StateMachine.DepthTestMode;
+import io.xol.chunkstories.api.rendering.pass.RenderPass;
+import io.xol.chunkstories.api.rendering.pass.RenderPasses;
+import io.xol.chunkstories.api.rendering.shader.Shader;
+import io.xol.chunkstories.api.rendering.target.RenderTargetsConfiguration;
 import io.xol.chunkstories.api.rendering.textures.Texture2D;
 import io.xol.chunkstories.api.rendering.textures.Texture2DRenderTarget;
 import io.xol.chunkstories.api.rendering.textures.TextureFormat;
@@ -23,7 +20,7 @@ public class PostProcessPass extends RenderPass {
 	final WorldRenderer worldRenderer;
 	final World world;
 	
-	RenderTargetAttachementsConfiguration fbo = null;
+	RenderTargetsConfiguration fbo = null;
 	Texture2D shadedBuffer = null;
 	Texture2D zBuffer = null;
 	
@@ -31,7 +28,7 @@ public class PostProcessPass extends RenderPass {
 	
 	final ShadowPass shadowPass;
 	
-	public PostProcessPass(RenderingPipeline pipeline, String name, String[] requires, ShadowPass shadowPass) {
+	public PostProcessPass(RenderPasses pipeline, String name, String[] requires, ShadowPass shadowPass) {
 		super(pipeline, name, requires, new String[] {"finalBuffer"});
 		this.worldRenderer = pipeline.getWorldRenderer();
 		this.world = worldRenderer.getWorld();
@@ -44,11 +41,11 @@ public class PostProcessPass extends RenderPass {
 	}
 
 	@Override
-	public void resolvedInputs(Map<String, Texture> inputs) {
+	public void onResolvedInputs() {
 		
 		//We need the shadedBuffer buffer from the previous passes
-		this.shadedBuffer = (Texture2D) inputs.get("shadedBuffer");
-		this.zBuffer = (Texture2D) inputs.get("zBuffer");
+		this.shadedBuffer = (Texture2D) resolvedInputs.get("shadedBuffer");
+		this.zBuffer = (Texture2D) resolvedInputs.get("zBuffer");
 	}
 
 	@Override
@@ -72,7 +69,7 @@ public class PostProcessPass extends RenderPass {
 			renderer.setDepthTestMode(DepthTestMode.DISABLED);
 			renderer.setBlendMode(BlendMode.DISABLED);
 
-			ShaderInterface postProcess = renderer.useShader("postprocess");
+			Shader postProcess = renderer.useShader("postprocess");
 			
 			renderer.bindTexture2D("shadedBuffer", shadedBuffer);
 			renderer.bindTexture2D("zBuffer", zBuffer);
@@ -114,12 +111,11 @@ public class PostProcessPass extends RenderPass {
 			}
 				
 			renderer.getCamera().setupShader(postProcess);
-			//skyRenderer.setupShader(postProcess);
+			worldRenderer.getSkyRenderer().setupShader(postProcess);
 
 			postProcess.setUniform1f("apertureModifier", 1.0f);
 
 			renderer.drawFSQuad();
-			renderer.flush();
 		}
 	}
 

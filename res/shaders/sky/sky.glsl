@@ -47,7 +47,7 @@ vec3 sunLightColor = sunAbsorb;
 vec3 getAtmosphericScatteringAmbient(){
 	float uDotV = -1.0; //float lDotV = dot(l, v);
 	
-	float opticalDepth    = gDepth(uDotV);	//Get depth from viewpoint
+	float opticalDepth = gDepth(uDotV);	//Get depth from viewpoint
 	
 	float phaseRayleigh = rPhase(lDotU);		//Rayleigh Phase
 	float phaseMie = mPhase(lDotU, opticalDepth);	//Mie Phase
